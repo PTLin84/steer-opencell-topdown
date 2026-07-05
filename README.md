@@ -9,14 +9,15 @@ Instead of going **design → performance/cost** (OpenCell's native direction), 
 ## Where This Fits (STEER Ecosystem)
 
 ```
-[steer-opencell-synthesis]      synthesis conditions → material properties
-        ↓
-[steer-opencell-design]         cell design params → performance & cost   ← wraps this
-        ↓
-[steer-opencell-topdown]  ✦     performance/cost targets → optimal design  ← this repo
-        ↓
-[steer-opencell-ESS]            optimized cell design → pack/system-level cost & performance
+[steer-opencell-synthesis]  →  [steer-opencell-design]  →  [steer-opencell-ESS]
+  synthesis → materials          design → performance            cell → system
+                                         ↑
+                              [steer-opencell-topdown]  ✦
+                              inverts the core layer:
+                              targets → optimal design
 ```
+
+`steer-opencell-topdown` is a **wrapper around** `steer-opencell-design`, not a downstream layer. It calls OpenCell repeatedly as a black-box simulator while searching the design space.
 
 ---
 
@@ -51,7 +52,7 @@ Treat OpenCell as a **black-box forward simulator**. Wrap it in a search loop:
 ```
 propose design params
         ↓
-evaluate via OpenCell → (energy_density, cost, cycle_life, ...)
+evaluate via OpenCell → (energy_density, cost_per_kWh, cycle_life, ...)
         ↓
 check against targets / update optimizer
         ↓
@@ -62,7 +63,7 @@ repeat until converged or budget exhausted
 
 | Method | Status | Notes |
 |---|---|---|
-| Grid search | MVP | Simple baseline; good for 1-2 parameter sweeps + Pareto plot |
+| Grid search | MVP | Simple baseline; 2-parameter sweep + Pareto plot |
 | Monte Carlo sampling | v0.2 | Scales better to higher dimensions |
 | Bayesian optimization | v0.3 | Most sample-efficient; ref: Attia et al. 2020 (Nature) |
 
@@ -70,21 +71,28 @@ repeat until converged or budget exhausted
 
 ## Key Design Parameters (Search Space)
 
-Candidates for the ~8–10 settable parameters drawn from OpenCell's inputs:
+The independent inputs to OpenCell — these are the parameters the optimizer actually varies.
 
-**Electrode**
-- `mass_loading` (mg/cm²) — active material coating weight
-- `calender_density` (g/cm³) — electrode compression
-- `coating_thickness` (µm) — derived from above; thicker = more capacity, longer diffusion path
-- `N/P ratio` — anode/cathode capacity ratio (typically 1.05–1.20 for graphite)
+**Continuous (sweep these)**
 
-**Chemistry**
-- Cathode: LFP / NMC622 / NMC811 / NCA / Na-ion (NFM)
-- Anode: synthetic graphite / hard carbon / Li metal
+| Parameter | Unit | Typical range | Notes |
+|---|---|---|---|
+| `mass_loading` | mg/cm² | 10–30 | Primary lever for energy density |
+| `calender_density` | g/cm³ | 2.5–4.0 | Higher = better energy density, worse rate capability |
+| `N/P ratio` | — | 1.05–1.20 | Must stay > 1.0 to prevent Li plating |
+| Separator thickness | µm | 12–25 | Affects safety and ion conductivity |
 
-**Geometry**
-- Cell format: cylindrical / prismatic / pouch
-- Cell dimensions, separator thickness/porosity, electrolyte type, tab design
+> Note: `coating_thickness` is **derived** from `mass_loading` ÷ `calender_density` — it is not an independent input and should not be varied directly.
+
+**Discrete (fix or enumerate)**
+
+| Parameter | Options | Notes |
+|---|---|---|
+| Cathode chemistry | LFP / NMC622 / NMC811 / NCA | Biggest single driver of energy density and cost |
+| Anode material | Graphite / Hard carbon / Li metal | Li metal = solid-state only |
+| Cell format | Cylindrical / Prismatic / Pouch | Affects geometry constraints |
+
+For MVP: **fix cathode chemistry as a user choice** to keep the continuous search space to 2–3 parameters. Enumerate across chemistries in v0.2.
 
 ---
 
@@ -92,40 +100,62 @@ Candidates for the ~8–10 settable parameters drawn from OpenCell's inputs:
 
 | | Description |
 |---|---|
-| **Input** | Target range for 1–2 key metrics (energy density, cost/kWh); optional fixed chemistry to reduce search space |
-| **Output** | Candidate designs + computed performance/cost; Pareto front plot |
-| **Out of scope (v0)** | Multi-chemistry sweep, manufacturing constraints, real supply-chain pricing |
+| **Input** | Cathode chemistry (user picks one) + target range for energy density (Wh/kg) and cost ($/kWh) |
+| **Output** | Grid of candidate designs with computed energy density and cost; Pareto front plot |
+| **Out of scope (v0)** | Multi-chemistry sweep, cycle life optimization, manufacturing constraints, real supply-chain pricing |
 
 ---
 
 ## Validation
 
-- Optimizer outputs must be physically plausible — check against `cell_references/` realistic parameter ranges from `steer-opencell-design`
-- Sanity check: results should reproduce known LFP vs. NMC811 trade-off curve
+- All optimizer outputs must fall within physically plausible parameter ranges — cross-check against `cell_references/` in `steer-opencell-design`
+- Sanity check: with chemistry fixed to LFP vs. NMC811, the resulting Pareto fronts should qualitatively match the known cost/energy trade-off (LFP: lower energy density, lower cost; NMC811: higher energy density, higher cost)
 
 ---
 
 ## Open Questions (to resolve with Nick)
 
-- [ ] Which 1–2 metrics for the first demo? (energy density vs. cost is the obvious pair)
-- [ ] Is cathode chemistry a fixed user choice, or part of the search space itself?
-- [ ] Go straight to Monte Carlo baseline, or start with a simpler grid search first?
+- [ ] Which metrics for the first demo? (energy density vs. cost is the obvious pair; cycle life as a third axis in v0.2?)
+- [ ] Is cathode chemistry a fixed user choice for MVP, or should it be part of the sweep from day one?
+- [ ] Start with grid search baseline, or go straight to Monte Carlo?
 
 ---
 
-## First Milestone
+## Milestones
 
-- [ ] Run `steer-opencell-design` quickstart end-to-end locally
-- [ ] Identify the ~8–10 most impactful settable parameters + realistic ranges (from `cell_references/`)
-- [ ] Implement grid search over 2 parameters → Pareto front plot for energy density vs. cost
-- [ ] That's a demoable v0 to bring to Nick
+### Before Nick sync — unblock yourself
+
+- [ ] `pip install steer-opencell-design` and run the quickstart end-to-end
+- [ ] Modify `mass_loading` and `N/P ratio`, call `propagate_changes()`, confirm `cell.energy` and `cell.cost_per_energy` update correctly
+- [ ] Browse `cell_references/` to nail down realistic parameter ranges for the grid
+- [ ] Decide: fix cathode to NMC811 for the first demo, or run LFP + NMC811 side by side?
+
+### MVP (v0) — demoable grid search
+
+- [ ] Implement a 2D grid search over `mass_loading` × `N/P ratio` (e.g. 10×10 grid, fixed NMC811 cathode)
+- [ ] Collect `(energy_density_Wh_kg, cost_per_kWh)` for each grid point
+- [ ] Extract and plot the Pareto front (energy density vs. cost)
+- [ ] Validate: does the Pareto front shape match qualitative expectations for NMC811?
+- [ ] **Done when**: you can hand Nick a plot that clearly shows the trade-off curve and 2–3 specific designs on the front with their full parameter sets
+
+### v0.2 — extend search space
+
+- [ ] Add `calender_density` as a third search dimension
+- [ ] Enumerate across cathode chemistries (LFP, NMC622, NMC811) and overlay their Pareto fronts
+- [ ] Switch from grid search to Monte Carlo sampling (scipy or numpy) for more efficient coverage
+
+### v0.3 — Bayesian optimization
+
+- [ ] Integrate a BO library (e.g. `botorch`, `scikit-optimize`, or `ax-platform`)
+- [ ] Benchmark sample efficiency vs. grid search / Monte Carlo on the same problem
+- [ ] Add cycle life as a third objective (3D Pareto surface)
 
 ---
 
 ## Setup
 
 ```bash
-# Clone and install the core dependency
+# Install the core dependency
 pip install steer-opencell-design
 
 # Clone this repo
