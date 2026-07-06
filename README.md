@@ -23,10 +23,13 @@ Instead of going **design → performance/cost** (OpenCell's native direction), 
 
 ## Problem / Motivation
 
+*These are assumptions that need to be verified.*
+
 - OpenCell computes performance and cost from design parameters (forward direction)
 - In practice, researchers and engineers start from a target: "I need ≥ 250 Wh/kg at ≤ $80/kWh — what designs can get me there with the least costs?"
 - Manually sweeping the design space by hand is slow and misses non-obvious optima
 - This app wraps OpenCell as a black-box simulator and searches the design space systematically
+
 
 ---
 
@@ -41,13 +44,6 @@ Instead of going **design → performance/cost** (OpenCell's native direction), 
 
 - Make the design process agentic and self-correcting.
 - Take into account the manufacturing costs, not just BOM costs.
-
-
-## Non-Goals (for MVP)
-
-- Not modeling pack/system-level (ESS) performance — that's `steer-opencell-ESS`
-- Not optimizing synthesis conditions — that's `steer-opencell-synthesis`
-- Doesn't need to be real-time or interactive — batch optimization is fine to start
 
 ---
 
@@ -142,12 +138,12 @@ The full design space has 10+ dimensions. Parameters are tiered by their leverag
 ## Open Questions (to discuss with Nick)
 
 - Do we now how people in the industry design a new cell?
-        - Do they tend to start with a commercial cell then tweak?
-        - What are the costs of changing cell dimensions?
-        - Do people design and outsource manufacturing?
-        - Any contacts to ask these questions?
+    - Do they tend to start with a commercial cell then tweak?
+    - What are the costs of changing cell dimensions?
+    - Do people design and outsource manufacturing?
+    - Any contacts to ask these questions?
 - Does it make sense to treat OpenCellDesign a black box? 
-        - Or should we build formulas for this top-down approach?
+        - Or should we build formulas instead for this top-down approach?
 - What are the parameters that matter the most when searching?
         - I currently choose `Cathode chemistry`, `cathode_mass_loading`, `cathode_calender_density`, and `N/P ratio`.
 - Can we provide cycle life predictions?
@@ -155,12 +151,6 @@ The full design space has 10+ dimensions. Parameters are tiered by their leverag
 ---
 
 ## Milestones
-
-### Before Nick sync — unblock yourself
-
-- [ ] `pip install steer-opencell-design` and run the quickstart end-to-end
-- [ ] Modify `mass_loading`, `calender_density`, and anode `mass_loading`, confirm `cell.specific_energy` and `cell.cost_per_energy` update correctly
-- [ ] Browse `cell_references/` to nail down realistic parameter ranges per chemistry
 
 ### MVP v1 — validate the Pareto front concept
 
